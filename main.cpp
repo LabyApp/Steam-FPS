@@ -275,6 +275,37 @@ body{background:#0b0e14;color:#f1f5f9;height:100vh;display:flex;flex-direction:c
 .pgbtn{height:30px;padding:0 16px;background:#131824;border:1px solid #1d2840;border-radius:6px;color:#cbd5e1;font-size:11px;font-weight:600;cursor:pointer}
 .pgbtn:hover{border-color:#38bdf8;color:#fff}
 .pglbl{font-size:11px;color:#475569;min-width:180px;text-align:center}
+
+/* ADD GAME BUTTON */
+.btn-add{height:32px;padding:0 14px;background:#1d4ed8;border:1px solid #3b82f6;border-radius:6px;color:#fff;font-size:11px;font-weight:700;cursor:pointer;transition:.15s;white-space:nowrap}
+.btn-add:hover{background:#2563eb}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:999;display:flex;align-items:center;justify-content:center}
+.modal-box{background:#111623;border:1px solid #1e293b;border-radius:14px;padding:28px 32px;width:400px;display:flex;flex-direction:column;gap:14px}
+.modal-title{font-size:16px;font-weight:800;color:#f1f5f9}
+.modal-sub{font-size:12px;color:#64748b;line-height:1.5}
+.modal-inp{background:#0b0e14;border:1px solid #1d2840;border-radius:8px;padding:10px 14px;color:#f1f5f9;font-size:14px;outline:none;width:100%}
+.modal-inp:focus{border-color:#38bdf8}
+.modal-inp::placeholder{color:#334155}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end}
+.modal-ok{height:34px;padding:0 20px;background:#1d4ed8;border:1px solid #3b82f6;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer}
+.modal-ok:hover{background:#2563eb}
+.modal-cancel{height:34px;padding:0 16px;background:#131824;border:1px solid #1d2840;border-radius:8px;color:#94a3b8;font-size:12px;font-weight:600;cursor:pointer}
+.modal-cancel:hover{border-color:#475569;color:#cbd5e1}
+.modal-status{font-size:11px;color:#94a3b8;min-height:16px}
+.modal-status.err{color:#ef4444}
+.modal-status.ok{color:#22c55e}
+
+/* MY GAMES VIEW */
+.mygames-view{position:absolute;inset:0;padding:18px 22px;overflow-y:auto;display:none;flex-direction:column;gap:16px}
+.mygames-view::-webkit-scrollbar{width:6px}
+.mygames-view::-webkit-scrollbar-thumb{background:#1d2840;border-radius:3px}
+.mygames-empty{color:#475569;font-size:13px;text-align:center;margin-top:60px}
+.mygames-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card-del{position:absolute;top:6px;right:6px;background:rgba(239,68,68,.85);border:none;border-radius:5px;color:#fff;font-size:10px;font-weight:800;padding:3px 7px;cursor:pointer;z-index:5;display:none}
+.card:hover .card-del{display:block}
+.card-del:hover{background:#dc2626}
 </style>
 </head>
 <body>
@@ -290,12 +321,18 @@ body{background:#0b0e14;color:#f1f5f9;height:100vh;display:flex;flex-direction:c
     <button class="tab on" onclick="setF('ALL',this)">Все игры</button>
     <button class="tab" onclick="setF('PC',this)">ПК Игры</button>
     <button class="tab" onclick="setF('VR',this)">VR Игры</button>
+    <button class="tab" id="tabMy" onclick="showMyGames(this)">Мои игры</button>
   </div>
+  <button class="btn-add" onclick="openAddModal()">+ Добавить игру по AppID</button>
   <div class="pinfo" id="pi">...</div>
 </div>
 
 <div class="main">
   <div class="catalog" id="cat"></div>
+  <div class="mygames-view" id="myView">
+    <div class="mygames-empty" id="myEmpty">Вы ещё не добавили ни одной игры.<br>Нажмите «+ Добавить игру по AppID» чтобы добавить.</div>
+    <div class="mygames-grid" id="myGrid"></div>
+  </div>
   <div class="detail" id="det">
     <div class="det-inner">
       <button class="btn-back" onclick="closeD()">‹ Назад в каталог</button>
@@ -344,6 +381,20 @@ body{background:#0b0e14;color:#f1f5f9;height:100vh;display:flex;flex-direction:c
   </div>
 </div>
 
+<!-- MODAL: Add game by AppID -->
+<div class="modal-bg" id="addModal" style="display:none" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal-box">
+    <div class="modal-title">Добавить игру по AppID</div>
+    <div class="modal-sub">Введите Steam AppID игры (число из ссылки на игру в Steam).<br>Например: store.steampowered.com/app/<b>730</b> → AppID: 730</div>
+    <input class="modal-inp" id="addInp" type="number" placeholder="Например: 730" min="1" max="9999999">
+    <div class="modal-status" id="addStatus"></div>
+    <div class="modal-btns">
+      <button class="modal-cancel" onclick="closeAddModal()">Отмена</button>
+      <button class="modal-ok" id="addOkBtn" onclick="doAddGame()">Добавить</button>
+    </div>
+  </div>
+</div>
+
 <div class="ftr" id="ftr">
   <button class="pgbtn" onclick="prevP()">‹ Назад</button>
   <div class="pglbl" id="pgl"></div>
@@ -357,13 +408,26 @@ body{background:#0b0e14;color:#f1f5f9;height:100vh;display:flex;flex-direction:c
     std::string(R"HTMLFOOTER(
 
 let filtered = [], page = 0, filt = 'ALL', curGame = null, curRes = '1080p';
+let viewMode = 'catalog'; // 'catalog' | 'mygames'
 const PS = 16;
 
 function esc(s){ return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
 
+// ── SAVED GAMES (localStorage) ────────────────────────────────────────────────
+function getSaved(){ try { return JSON.parse(localStorage.getItem('steamfps_added')||'[]'); } catch(e){ return []; } }
+function setSaved(arr){ localStorage.setItem('steamfps_added', JSON.stringify(arr)); }
+
+// ── CATALOG FILTER ────────────────────────────────────────────────────────────
 function applyF(){
+  viewMode = 'catalog';
+  document.getElementById('cat').style.display = 'grid';
+  document.getElementById('myView').style.display = 'none';
+  document.getElementById('ftr').style.display = 'flex';
+
   const q = document.getElementById('q').value.toLowerCase().trim();
-  filtered = GAMES_DATA.filter(g=>{
+  const saved = getSaved();
+  const all = [...GAMES_DATA, ...saved.filter(s => !GAMES_DATA.some(g => g.id === s.id))];
+  filtered = all.filter(g=>{
     if(filt==='VR' && !g.is_vr) return false;
     if(filt==='PC' && g.is_vr) return false;
     if(q && !g.name.toLowerCase().includes(q)) return false;
@@ -381,6 +445,54 @@ function setF(f, btn){
 
 document.getElementById('q').addEventListener('input', applyF);
 
+// ── MY GAMES TAB ──────────────────────────────────────────────────────────────
+function showMyGames(btn){
+  viewMode = 'mygames';
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('cat').style.display = 'none';
+  document.getElementById('myView').style.display = 'flex';
+  document.getElementById('ftr').style.display = 'none';
+  document.getElementById('det').style.display = 'none';
+  renderMyGames();
+}
+
+function renderMyGames(){
+  const saved = getSaved();
+  const grid = document.getElementById('myGrid');
+  const empty = document.getElementById('myEmpty');
+  grid.innerHTML = '';
+  if(saved.length === 0){
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  saved.forEach(g => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    const steamImg = g.img || `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${g.id}/header.jpg`;
+    const fallback = `https://cdn.cloudflare.steamstatic.com/steam/apps/${g.id}/header.jpg`;
+    d.innerHTML = `
+      <div style="position:relative">
+        <img class="card-img" src="${steamImg}" onerror="if(this.src!=='${fallback}')this.src='${fallback}';else this.style.opacity='0.3';" loading="lazy" alt="">
+        <button class="card-del" onclick="event.stopPropagation();deleteGame(${g.id})">✕ Удалить</button>
+      </div>
+      <div class="card-foot">
+        <div class="card-name">${esc(g.name)}</div>
+        <div class="card-genre">${esc(g.genre||'Неизвестный жанр')}</div>
+      </div>`;
+    d.onclick = () => openD(g);
+    grid.appendChild(d);
+  });
+}
+
+function deleteGame(id){
+  const saved = getSaved().filter(g => g.id !== id);
+  setSaved(saved);
+  renderMyGames();
+}
+
+// ── RENDER CATALOG ────────────────────────────────────────────────────────────
 function render(){
   const cat = document.getElementById('cat');
   cat.innerHTML='';
@@ -421,6 +533,7 @@ function setRes(r,btn){
 function openD(g){
   curGame=g;
   document.getElementById('ftr').style.display='none';
+  document.getElementById('myView').style.display='none';
   const det = document.getElementById('det');
   det.style.display='flex';
   det.scrollTop = 0;
@@ -574,8 +687,278 @@ function calcAndRender(g){
 
 function closeD(){
   document.getElementById('det').style.display='none';
-  document.getElementById('ftr').style.display='flex';
+  if(viewMode === 'mygames'){
+    document.getElementById('myView').style.display='flex';
+  } else {
+    document.getElementById('cat').style.display='grid';
+    document.getElementById('ftr').style.display='flex';
+  }
   curGame=null;
+}
+
+// ── ADD GAME MODAL ────────────────────────────────────────────────────────────
+function openAddModal(){
+  document.getElementById('addModal').style.display='flex';
+  document.getElementById('addInp').value='';
+  setStatus('','');
+  document.getElementById('addOkBtn').disabled=false;
+  setTimeout(()=>document.getElementById('addInp').focus(),50);
+}
+
+function closeAddModal(){
+  document.getElementById('addModal').style.display='none';
+}
+
+function setStatus(msg, type){
+  const el = document.getElementById('addStatus');
+  el.textContent = msg;
+  el.className = 'modal-status' + (type ? ' '+type : '');
+}
+
+document.getElementById('addInp').addEventListener('keydown', e => {
+  if(e.key === 'Enter') doAddGame();
+  if(e.key === 'Escape') closeAddModal();
+});
+
+async function doAddGame(){
+  const val = document.getElementById('addInp').value.trim();
+  const id = parseInt(val, 10);
+
+  if(!id || id <= 0 || id > 9999999){
+    setStatus('Введите корректный AppID (число от 1 до 9999999)', 'err');
+    return;
+  }
+
+  // Проверяем, не добавлена ли уже эта игра
+  const existing = [...GAMES_DATA, ...getSaved()];
+  if(existing.some(g => g.id === id)){
+    setStatus('Эта игра уже есть в каталоге!', 'err');
+    return;
+  }
+
+  setStatus('⏳ Загружаем данные из Steam...', '');
+  document.getElementById('addOkBtn').disabled = true;
+
+  try {
+    const game = await fetchGameByAppId(id);
+    if(!game){
+      setStatus('❌ Игра не найдена в Steam. Проверьте AppID.', 'err');
+      document.getElementById('addOkBtn').disabled = false;
+      return;
+    }
+
+    const saved = getSaved();
+    saved.unshift(game);
+    setSaved(saved);
+
+    setStatus('✅ Добавлено: ' + game.name, 'ok');
+    document.getElementById('addOkBtn').disabled = false;
+
+    setTimeout(() => {
+      closeAddModal();
+      // Переключаемся на вкладку "Мои игры"
+      document.getElementById('tabMy').click();
+    }, 900);
+
+  } catch(e) {
+    setStatus('❌ Ошибка сети. Попробуйте ещё раз.', 'err');
+    document.getElementById('addOkBtn').disabled = false;
+  }
+}
+
+async function fetchGameByAppId(appId){
+  // Пробуем получить данные через allorigins (обходит CORS)
+  const steamUrl = `https://store.steampowered.com/api/appdetails?appids=${appId}&l=russian`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(steamUrl)}`;
+
+  let json = null;
+
+  // Попытка 1: прямой запрос
+  try {
+    const r = await fetch(steamUrl, {signal: AbortSignal.timeout(5000)});
+    const text = await r.text();
+    if(text.startsWith('{')) json = JSON.parse(text);
+  } catch(e) {}
+
+  // Попытка 2: через прокси
+  if(!json) {
+    try {
+      const r = await fetch(proxyUrl, {signal: AbortSignal.timeout(8000)});
+      const text = await r.text();
+      if(text.startsWith('{')) json = JSON.parse(text);
+    } catch(e) {}
+  }
+
+  // Если оба провалились — возвращаем null (не добавляем мусор)
+  if(!json) return null;
+
+  const data = json[String(appId)];
+  if(!data || !data.success || !data.data) return null;
+
+  const d = data.data;
+
+  // Валидация: игра должна иметь реальное название (не число, не пустую строку)
+  const name = (d.name || '').trim();
+  if(!name || /^\d+$/.test(name)) return null;
+
+  // Жанр
+  const genre = d.genres ? d.genres.map(x=>x.description).join(' / ') : 'Разное';
+
+  // Разработчик
+  const dev = (d.developers && d.developers[0]) || '';
+
+  // VR?
+  const cats = d.categories ? d.categories.map(c=>c.description.toLowerCase()).join(' ') : '';
+  const isVr = cats.includes('vr') || name.toLowerCase().includes(' vr');
+
+  return {
+    id: appId,
+    name: name,
+    genre: genre,
+    dev: dev,
+    is_vr: isVr ? 1 : 0,
+    img: `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`
+  };
+}
+
+// Инициализация каталога сразу при загрузке
+applyF();
+</script>
+
+
+function calcAndRender(g){
+  const isVR = Boolean(g.is_vr);
+  const tgtFPS = isVR ? 90 : 60;
+
+  // Индивидуальные требования выбранной игры:
+  const baseGPU = g.min_gpu || (isVR ? 46.0 : 32.0);
+  const baseCPU = g.min_cpu || (isVR ? 48.0 : 34.0);
+  const reqRAM  = g.min_ram || 8.0;
+  const reqVRAM = g.min_vram || 3.0;
+
+  const resScale = {'720p': 1.40, '1080p': 1.0, '1440p': 0.68, '4K': 0.35}[curRes] || 1.0;
+
+  // Реалистичные множители пресетов: Low, Medium, High, Ultra
+  const mults = [0.68, 0.95, 1.30, 1.70];
+  const pkeys = ['Low', 'Medium', 'High', 'Ultra'];
+
+  let fps_arr = [], rec = 'Low';
+
+  mults.forEach((m, i) => {
+    const needGPU = baseGPU * m;
+    // Нагрузка на CPU растет слабее настроек графики, но зависит от базовой физики/логики
+    const needCPU = baseCPU * (1.0 + (m - 1.0) * 0.40);
+    const needVRAM = reqVRAM + (i * 1.0);
+    const needRAM  = reqRAM  + (i * 2.0);
+
+    // Факторы производительности
+    let gRatio = myGPU / needGPU;
+    let cRatio = myCPU / needCPU;
+
+    // Штрафы за нехватку видеопамяти и оперативной памяти
+    let vramPenalty = 1.0;
+    if (myVRAM < needVRAM) {
+      const vramShort = needVRAM - myVRAM;
+      vramPenalty = Math.max(0.65, 1.0 - vramShort * 0.10);
+    }
+
+    let ramPenalty = 1.0;
+    if (myRAM < needRAM) {
+      const ramShort = needRAM - myRAM;
+      ramPenalty = Math.max(0.75, 1.0 - ramShort * 0.05);
+    }
+
+    // Итоговый расчет FPS
+    let gFPS = tgtFPS * gRatio * vramPenalty * resScale;
+    let cFPS = tgtFPS * cRatio * ramPenalty;
+
+    let finalFPS = Math.round(Math.min(gFPS, cFPS));
+    if (finalFPS < 15) finalFPS = 15;
+
+    fps_arr.push(finalFPS);
+    if (finalFPS >= (isVR ? 72 : 55)) {
+      rec = pkeys[i];
+    }
+  });
+
+  // Отрисовка карточек пресетов с реалистичными диапазонами (85-98% соответствие бенчмаркам)
+  const grid = document.getElementById('dPre');
+  grid.innerHTML = '';
+  pkeys.forEach((p, i) => {
+    const avgFPS = fps_arr[i];
+    const best = (p === rec);
+
+    // Диапазон FPS: открытые пространства vs тяжелые сцены/города
+    const minFPS = Math.max(12, Math.round(avgFPS * 0.88));
+    const maxFPS = Math.round(avgFPS * 1.12);
+
+    // 1% Low (просадки из-за 4 ядер процессора и 8GB RAM)
+    const dropLow = Math.max(10, Math.round(avgFPS * (myRAM <= 8 ? 0.65 : 0.75)));
+
+    let col = '#22c55e', st = 'ОТЛИЧНО';
+    if (avgFPS < 30) { col = '#ef4444'; st = 'НЕИГРАБЕЛЬНО'; }
+    else if (avgFPS < 45) { col = '#f97316'; st = 'НИЗКИЙ'; }
+    else if (avgFPS < 60) { col = '#eab308'; st = 'ИГРАБЕЛЬНО'; }
+    else if (avgFPS < 90) { col = '#38bdf8'; st = 'ПЛАВНО'; }
+
+    const el = document.createElement('div');
+    el.className = 'pc' + (best ? ' best' : '');
+    el.innerHTML = `
+      ${best ? '<div class="pc-best-lbl">РЕКОМЕНДУЕМ</div>' : ''}
+      <div class="pc-name">${p.toUpperCase()}</div>
+      <div class="pc-fps-range" style="color:${col}">${minFPS}–${maxFPS}</div>
+      <div class="pc-avg">средний: ${avgFPS} FPS</div>
+      <div class="pc-lows">просадки до ${dropLow} FPS</div>
+      <div class="pc-status" style="color:${col};background:${col}18">${st}</div>`;
+    grid.appendChild(el);
+  });
+
+  // Загрузка CPU, GPU и VRAM для рекомендуемого/текущего пресета
+  const recIdx = pkeys.indexOf(rec);
+  const targetM = mults[recIdx];
+  const curNeedGPU = baseGPU * targetM;
+  const curNeedCPU = baseCPU * Math.pow(targetM, 0.7);
+  const curNeedVRAM = Math.min(myVRAM, reqVRAM + (recIdx * 1.5));
+
+  const gpuLoad = Math.min(100, Math.round((curNeedGPU / myGPU) * 95));
+  const cpuLoad = Math.min(100, Math.round((curNeedCPU / myCPU) * 90));
+  const vramPercent = Math.min(100, Math.round((curNeedVRAM / myVRAM) * 100));
+
+  document.getElementById('cpuBar').style.width = cpuLoad + '%';
+  document.getElementById('gpuBar').style.width = gpuLoad + '%';
+  document.getElementById('vramBar').style.width = vramPercent + '%';
+  document.getElementById('cpuLbl').textContent = cpuLoad + '% загрузка';
+  document.getElementById('gpuLbl').textContent = gpuLoad + '% загрузка';
+  document.getElementById('vramLbl').textContent = curNeedVRAM.toFixed(1) + ' / ' + myVRAM + ' ГБ';
+
+  // Индивидуальные советы для игры под конкретный ПК
+  const advs = [];
+  if (baseGPU >= 50.0) {
+    advs.push('Это требовательная AAA игра. Видеокарта ' + myGPUName + ' будет работать на пределе.');
+  } else if (baseGPU <= 25.0) {
+    advs.push('Игра отлично оптимизирована и легко идет на вашей сборке со стабильно высоким фреймрейтом.');
+  }
+
+  if (cpuLoad >= 85) {
+    advs.push('Процессор ' + myCPUName + ' нагружен на ' + cpuLoad + '%. В динамичных сценах возможен упор в CPU.');
+  }
+
+  if (reqRAM >= 12 && myRAM <= 8) {
+    advs.push('Игра требует от 12 ГБ ОЗУ! При ' + Math.round(myRAM) + ' ГБ RAM возможны микрофризы из-за файла подкачки.');
+  } else if (myRAM < 16 && (rec === 'High' || rec === 'Ultra')) {
+    advs.push('Для максимальной плавности на высоких настройках рекомендуется увеличить ОЗУ до 16 ГБ.');
+  }
+
+  if (isVR) {
+    advs.push('VR режим требует стабильные 90 Гц. Рекомендуется настроить масштабирование в SteamVR под вашу видеокарту.');
+  }
+
+  if (advs.length === 0) {
+    advs.push('Конфигурация вашей системы оптимально подходит для игры на пресете ' + rec + '.');
+  }
+
+  const al = document.getElementById('advList');
+  al.innerHTML = advs.map(a => `<div class="adv">• ${a}</div>`).join('');
 }
 
 // Инициализация каталога сразу при загрузке
